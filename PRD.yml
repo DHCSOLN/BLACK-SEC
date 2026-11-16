@@ -1,0 +1,49 @@
+id: PRD-BSEC-2026-001
+product: BLACK SEC — SOLN Enterprise Securities Market
+owner: SOLN GPBC
+standards: BSEC-001..BSEC-030
+disclaimers:
+  - Not the U.S. SEC; not a government regulator
+  - Registry membership is not exchange registration
+  - Trading and funding are sandbox-only until a verified regulated integration exists
+roles: [founding_admin, registrar, compliance_officer, financial_ops, auditor, investor, enterprise_founder, enterprise_secretary]
+authoritative_ledger:
+  system: SOLN Central Bank / Global SOLN Reserve
+  references: [globalsolnreserve.com, DHCSOLN/GLOBAL-SOLN-RESERVE, SOLNCB (AWS / MongoDB Atlas)]
+  black_sec_role: read_models_only
+  status: CONNECTOR_NOT_YET_VERIFIED
+  secrets: [SOLN_LEDGER_BASE_URL, SOLN_LEDGER_API_KEY, SOLN_REQUEST_SIGNING_SECRET, SOLN_WEBHOOK_SECRET, SOLN_LEDGER_ENVIRONMENT]
+  outbound_interface_proposed:
+    - GET /v1/health
+    - GET /v1/accounts/{ref}/balances
+    - POST /v1/accounts/sync
+    - POST /v1/instructions
+    - GET /v1/instructions/{ref}
+    - POST /v1/journal-events
+  outbound_headers: [Authorization Bearer, Idempotency-Key, X-BSEC-Timestamp, X-BSEC-Signature (sha256 HMAC of "timestamp.body")]
+  retry: exponential backoff 30s x4^n capped at 6h; manual replay of failed
+  statuses:
+    soln_posting_status: [not_posted, queued, soln_ledger_posted, soln_rejected]
+    external_bank_status: [not_settled, external_settlement_confirmed, external_settlement_failed]
+webhooks:
+  inbound_url: /api/public/v1/webhooks/soln
+  headers: [x-soln-signature, x-soln-timestamp]
+  tolerance_seconds: 300
+  idempotency: event_id unique
+  envelope:
+    event_id: string
+    type: [instruction.posted, instruction.rejected, settlement.external_confirmed, settlement.external_failed, journal.posted, journal.rejected, account.synced, balance.updated]
+    occurred_at: ISO-8601
+    data: {idempotency_key: string?, soln_ref: string?, account_ref: string?, currency: string?, balance: decimal-string?, as_of: ISO-8601?, reason: string?}
+std_state_machine:
+  happy_path: [CREATED, VALIDATED, QUOTED, FUNDED, EXECUTED, SETTLED, RECONCILED, ARCHIVED]
+  exceptional: [FAILED, EXPIRED, CANCELLED, REVERSED, DISPUTED]
+  external_confirmation_required: [FUNDED, SETTLED]
+  terminology_note: GFI/STD are SOLN-configurable pending exact protocol definition
+currencies: [LND, USD, EUR, GBP, CAD, NGN, JMD, XOF, XCD]
+rest_endpoints:
+  - GET /api/public/v1/health
+  - GET /api/public/v1/directory
+  - GET /api/v1/enterprises/{id}/cap-table (Bearer)
+  - POST /api/public/v1/webhooks/soln (HMAC)
+invariants_tested: src/test/finance.test.ts
